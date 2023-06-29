@@ -1,51 +1,51 @@
-'use strict';
+"use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.GenericDatasource = undefined;
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _lodash = require('lodash');
-
-var _lodash2 = _interopRequireDefault(_lodash);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
+exports.GenericDatasource = void 0;
+var _lodash = _interopRequireDefault(require("lodash"));
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
+function _typeof(obj) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (obj) { return typeof obj; } : function (obj) { return obj && "function" == typeof Symbol && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }, _typeof(obj); }
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-var GenericDatasource = exports.GenericDatasource = function () {
+function _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, _toPropertyKey(descriptor.key), descriptor); } }
+function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); Object.defineProperty(Constructor, "prototype", { writable: false }); return Constructor; }
+function _toPropertyKey(arg) { var key = _toPrimitive(arg, "string"); return _typeof(key) === "symbol" ? key : String(key); }
+function _toPrimitive(input, hint) { if (_typeof(input) !== "object" || input === null) return input; var prim = input[Symbol.toPrimitive]; if (prim !== undefined) { var res = prim.call(input, hint || "default"); if (_typeof(res) !== "object") return res; throw new TypeError("@@toPrimitive must return a primitive value."); } return (hint === "string" ? String : Number)(input); }
+var GenericDatasource = /*#__PURE__*/function () {
   function GenericDatasource(instanceSettings, $q, backendSrv, templateSrv) {
     _classCallCheck(this, GenericDatasource);
-
     this.type = instanceSettings.type;
     this.url = instanceSettings.url;
     this.name = instanceSettings.name;
-    this.db = { 'url': instanceSettings.jsonData.mongodb_url, 'db': instanceSettings.jsonData.mongodb_db };
+    this.db = {
+      'url': instanceSettings.jsonData.mongodb_url,
+      'db': instanceSettings.jsonData.mongodb_db
+    };
     this.q = $q;
     this.backendSrv = backendSrv;
     this.templateSrv = templateSrv;
     this.withCredentials = instanceSettings.withCredentials;
-    this.headers = { 'Content-Type': 'application/json' };
+    this.headers = {
+      'Content-Type': 'application/json'
+    };
     if (typeof instanceSettings.basicAuth === 'string' && instanceSettings.basicAuth.length > 0) {
       this.headers['Authorization'] = instanceSettings.basicAuth;
     }
   }
-
   _createClass(GenericDatasource, [{
-    key: 'query',
+    key: "query",
     value: function query(options) {
       var query = this.buildQueryParameters(options);
       query.targets = query.targets.filter(function (t) {
         return !t.hide;
       });
       query.db = this.db;
-
       if (query.targets.length <= 0) {
-        return this.q.when({ data: [] });
+        return this.q.when({
+          data: []
+        });
       }
-
       return this.doRequest({
         url: this.url + '/query',
         data: query,
@@ -53,20 +53,26 @@ var GenericDatasource = exports.GenericDatasource = function () {
       });
     }
   }, {
-    key: 'testDatasource',
+    key: "testDatasource",
     value: function testDatasource() {
       return this.doRequest({
         url: this.url + '/',
-        data: { db: this.db },
+        data: {
+          db: this.db
+        },
         method: 'POST'
       }).then(function (response) {
         if (response.status === 200) {
-          return { status: response.data.status, message: response.data.message, title: response.data.display_status };
+          return {
+            status: response.data.status,
+            message: response.data.message,
+            title: response.data.display_status
+          };
         }
       });
     }
   }, {
-    key: 'annotationQuery',
+    key: "annotationQuery",
     value: function annotationQuery(options) {
       var query = this.templateSrv.replace(options.annotation.query, {}, 'glob');
       var annotationQuery = {
@@ -80,7 +86,6 @@ var GenericDatasource = exports.GenericDatasource = function () {
         },
         rangeRaw: options.rangeRaw
       };
-
       return this.doRequest({
         url: this.url + '/annotations',
         method: 'POST',
@@ -92,13 +97,12 @@ var GenericDatasource = exports.GenericDatasource = function () {
       });
     }
   }, {
-    key: 'metricFindQuery',
+    key: "metricFindQuery",
     value: function metricFindQuery(query) {
       var interpolated = {
         target: this.templateSrv.replace(query, null, '')
       };
       interpolated.db = this.db;
-
       return this.doRequest({
         url: this.url + '/search',
         data: interpolated,
@@ -106,36 +110,42 @@ var GenericDatasource = exports.GenericDatasource = function () {
       }).then(this.mapToTextValue);
     }
   }, {
-    key: 'mapToTextValue',
+    key: "mapToTextValue",
     value: function mapToTextValue(result) {
-      return _lodash2.default.map(result.data, function (d, i) {
+      return _lodash["default"].map(result.data, function (d, i) {
         if (d && d.text && d.value) {
-          return { text: d.text, value: d.value };
-        } else if (_lodash2.default.isObject(d)) {
-          return { text: d, value: i };
+          return {
+            text: d.text,
+            value: d.value
+          };
+        } else if (_lodash["default"].isObject(d)) {
+          return {
+            text: d,
+            value: i
+          };
         }
-        return { text: d, value: d };
+        return {
+          text: d,
+          value: d
+        };
       });
     }
   }, {
-    key: 'doRequest',
+    key: "doRequest",
     value: function doRequest(options) {
       options.withCredentials = this.withCredentials;
       options.headers = this.headers;
-
       return this.backendSrv.datasourceRequest(options);
     }
   }, {
-    key: 'buildQueryParameters',
+    key: "buildQueryParameters",
     value: function buildQueryParameters(options) {
       var _this = this;
-
       //remove place holder targets
-      options.targets = _lodash2.default.filter(options.targets, function (target) {
+      options.targets = _lodash["default"].filter(options.targets, function (target) {
         return target.target !== 'select metric';
       });
-
-      var targets = _lodash2.default.map(options.targets, function (target) {
+      var targets = _lodash["default"].map(options.targets, function (target) {
         return {
           target: _this.templateSrv.replace(target.target, options.scopedVars, ''),
           refId: target.refId,
@@ -143,13 +153,11 @@ var GenericDatasource = exports.GenericDatasource = function () {
           type: target.type || 'timeserie'
         };
       });
-
       options.targets = targets;
-
       return options;
     }
   }]);
-
   return GenericDatasource;
 }();
+exports.GenericDatasource = GenericDatasource;
 //# sourceMappingURL=datasource.js.map
