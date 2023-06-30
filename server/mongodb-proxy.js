@@ -2,7 +2,7 @@ var express = require('express');
 var bodyParser = require('body-parser');
 var _ = require('lodash');
 var app = express();
-const MongoClient = require('mongodb').MongoClient;
+const { MongoClient, ServerApiVersion } = require("mongodb");
 const assert = require('assert');
 var config = require('config');
 var Stopwatch = require("statman-stopwatch");
@@ -10,32 +10,60 @@ var moment = require('moment')
 
 app.use(bodyParser.json());
 
+async function connectMongoDB(uri) {
+  // Create a MongoClient with a MongoClientOptions object to set the Stable API version
+  const client = new MongoClient(uri, {
+    serverApi: {
+        version: ServerApiVersion.v1,
+        strict: true,
+        deprecationErrors: true,
+    }
+  });
+
+  try {
+    // Connect the client to the server
+    await client.connect();
+
+    // Send a ping to confirm a successful connection
+    await client.db("admin").command({ ping: 1 });
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+
+    return { client, error: null };
+
+  } catch (error) {
+    console.log("MongoDB Connection Error: ", error);
+    await client.close();
+    return { client: null, error: 'MongoDB Connection Error: ' + error };
+  }
+}
+
 // Called by test
-app.all('/', function(req, res, next) 
+app.all('/', async function(req, res, next) 
 {
   logRequest(req.body, "/")
   setCORSHeaders(res);
 
-  MongoClient.connect(req.body.db.url, function(err, client)
-  {
-    if ( err != null )
-    {
-      res.send({ status : "error", 
-                 display_status : "Error", 
-                 message : 'MongoDB Connection Error: ' + err.message });
-    }
-    else
-    {
-      res.send( { status : "success", 
-                  display_status : "Success", 
-                  message : 'MongoDB Connection test OK' });
-    }
-    next()
-  })
+  const uri = req.body.db.url;
+
+  const { client, error } = await connectMongoDB(uri);
+  if (error) {
+    res.send({ status : "error", 
+    display_status : "Error", 
+    message : 'MongoDB Connection Error: '});
+
+    client.close();
+  } else {
+    res.send( { status : "success", 
+    display_status : "Success", 
+    message : 'MongoDB Connection test OK' });
+  }
+
+  next();
+
 });
 
 // Called by template functions and to look up variables
-app.all('/search', function(req, res, next)
+app.all('/search', async function(req, res, next)
 {
   logRequest(req.body, "/search")
   setCORSHeaders(res);
@@ -53,7 +81,15 @@ app.all('/search', function(req, res, next)
   }
   else
   {
-    doTemplateQuery(requestId, queryArgs, req.body.db, res, next);
+
+    const { client, error } = await connectMongoDB(req.body.db.url);
+    if (error) {
+      queryError(requestId, error, next)
+    } else {
+      // Run the query
+      doTemplateQuery(client, requestId, queryArgs, req.body.db, res, next);
+    }
+
   }
 });
 
@@ -66,6 +102,8 @@ var requestsPending = {}
 // Called when a query finishes with an error
 function queryError(requestId, err, next)
 {
+  console.log("query error:\n" + JSON.stringify(err,null,2))
+
   // We only 1 return error per query so it may have been removed from the list
   if ( requestId in requestsPending )
   {
@@ -122,7 +160,7 @@ function queryFinished(requestId, queryId, results, res, next)
 }
 
 // Called to get graph points
-app.all('/query', function(req, res, next)
+app.all('/query', async function(req, res, next)
 {
     logRequest(req.body, "/query")
     setCORSHeaders(res);
@@ -155,8 +193,14 @@ app.all('/query', function(req, res, next)
         // Add to the state
         queryStates.push( { pending : true } )
 
-        // Run the query
-        runAggregateQuery( requestId, queryId, req.body, queryArgs, res, next)
+        const { client, error } = await connectMongoDB(req.body.db.url);
+        if (error) {
+          queryError(requestId, error, next)
+          error = true
+        } else {
+          // Run the query
+          await runAggregateQuery( client, requestId, queryId, req.body, queryArgs, res, next)
+        }
       }
     }
   }
@@ -280,64 +324,54 @@ function parseQuery(query, substitutions)
     doc.err = new Error('Failed to parse query - ' + queryErrors.join(':'))
   }
 
+  console.log("query args: " + JSON.stringify(doc,null,2))
+
   return doc
 }
 
 // Run an aggregate query. Must return documents of the form
 // { value : 0.34334, ts : <epoch time in seconds> }
 
-function runAggregateQuery( requestId, queryId, body, queryArgs, res, next )
+async function runAggregateQuery( client, requestId, queryId, body, queryArgs, res, next )
 {
-  MongoClient.connect(body.db.url, function(err, client) 
+  const db = client.db(body.db.db);
+
+  // Get the documents collection
+  const collection = db.collection(queryArgs.collection);
+  logQuery(queryArgs.pipeline, queryArgs.agg_options)
+  var stopwatch = new Stopwatch(true)
+
+  console.log("collection: " + JSON.stringify(queryArgs.collection,null,2) + "\n")
+
+  const docs = await collection.aggregate(queryArgs.pipeline, queryArgs.agg_options).toArray();
+
+  console.log("docs: " + JSON.stringify(docs,null,2) + "\n");
+
+  try
   {
-    if ( err != null )
+    var results = {}
+    if ( queryArgs.type == 'timeserie' )
     {
-      queryError(requestId, err, next)
+      console.log("getting timeseries results")
+      results = getTimeseriesResults(docs)
     }
     else
     {
-      const db = client.db(body.db.db);
-  
-      // Get the documents collection
-      const collection = db.collection(queryArgs.collection);
-      logQuery(queryArgs.pipeline, queryArgs.agg_options)
-      var stopwatch = new Stopwatch(true)
+      console.log("getting table results")
+      results = getTableResults(docs)
+    }
 
-      collection.aggregate(queryArgs.pipeline, queryArgs.agg_options).toArray(function(err, docs) 
-        {
-          if ( err != null )
-          {
-            client.close();
-            queryError(requestId, err, next)
-          }
-          else
-          {
-            try
-            {
-              var results = {}
-              if ( queryArgs.type == 'timeserie' )
-              {
-                results = getTimeseriesResults(docs)
-              }
-              else
-              {
-                results = getTableResults(docs)
-              }
-      
-              client.close();
-              var elapsedTimeMs = stopwatch.stop()
-              logTiming(body, elapsedTimeMs)
-              // Mark query as finished - will send back results when all queries finished
-              queryFinished(requestId, queryId, results, res, next)
-            }
-            catch(err)
-            {
-              queryError(requestId, err, next)
-            }
-          }
-        })
-      }
-    })
+    client.close();
+    var elapsedTimeMs = stopwatch.stop()
+    logTiming(body, elapsedTimeMs)
+    // Mark query as finished - will send back results when all queries finished
+    queryFinished(requestId, queryId, results, res, next)
+  }
+  catch(err)
+  {
+    queryError(requestId, err, next)
+  }
+
 }
 
 function getTableResults(docs)
@@ -419,47 +453,37 @@ function getTimeseriesResults(docs)
 
 // Runs a query to support templates. Must returns documents of the form
 // { _id : <id> }
-function doTemplateQuery(requestId, queryArgs, db, res, next)
+async function doTemplateQuery(client, requestId, queryArgs, db, res, next)
 {
  if ( queryArgs.err == null)
   {
     // Database Name
     const dbName = db.db
     
-    // Use connect method to connect to the server
-    MongoClient.connect(db.url, function(err, client) 
+    // Remove request from list
+    if ( requestId in requestsPending )
     {
-      if ( err != null )
-      {
-        queryError(requestId, err, next )
-      }
-      else
-      {
-        // Remove request from list
-        if ( requestId in requestsPending )
-        {
-          delete requestsPending[requestId]
-        }
-        const db = client.db(dbName);
-        // Get the documents collection
-        const collection = db.collection(queryArgs.collection);
-          
-        collection.aggregate(queryArgs.pipeline).toArray(function(err, result) 
-          {
-            assert.equal(err, null)
-    
-            output = []
-            for ( var i = 0; i < result.length; i++)
-            {
-              var doc = result[i]
-              output.push(doc["_id"])
-            }
-            res.json(output);
-            client.close()
-            next()
-          })
-      }
-    })
+      delete requestsPending[requestId]
+    }
+    const db = client.db(dbName);
+    // Get the documents collection
+    const collection = db.collection(queryArgs.collection);
+
+    console.log("collection: " + JSON.stringify(queryArgs.collection,null,2) + "\n")
+
+    const result = await collection.aggregate(queryArgs.pipeline).toArray();
+
+    console.log("template query aggregation result: " + JSON.stringify(result,null,2) + "\n")
+
+    output = []
+    for ( var i = 0; i < result.length; i++)
+    {
+      var doc = result[i]
+      output.push(doc["_id"])
+    }
+    res.json(output);
+    client.close()
+    next()
   }
   else
   {
