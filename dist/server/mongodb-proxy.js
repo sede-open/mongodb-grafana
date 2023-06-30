@@ -453,7 +453,7 @@ function getTimeseriesResults(docs)
 
 // Runs a query to support templates. Must returns documents of the form
 // { _id : <id> }
-function doTemplateQuery(client, requestId, queryArgs, db, res, next)
+async function doTemplateQuery(client, requestId, queryArgs, db, res, next)
 {
  if ( queryArgs.err == null)
   {
@@ -468,21 +468,22 @@ function doTemplateQuery(client, requestId, queryArgs, db, res, next)
     const db = client.db(dbName);
     // Get the documents collection
     const collection = db.collection(queryArgs.collection);
-      
-    collection.aggregate(queryArgs.pipeline).toArray(function(err, result) 
-      {
-        assert.equal(err, null)
 
-        output = []
-        for ( var i = 0; i < result.length; i++)
-        {
-          var doc = result[i]
-          output.push(doc["_id"])
-        }
-        res.json(output);
-        client.close()
-        next()
-      })
+    console.log("collection: " + JSON.stringify(queryArgs.collection,null,2) + "\n")
+
+    const result = await collection.aggregate(queryArgs.pipeline).toArray();
+
+    console.log("template query aggregation result: " + JSON.stringify(result,null,2) + "\n")
+
+    output = []
+    for ( var i = 0; i < result.length; i++)
+    {
+      var doc = result[i]
+      output.push(doc["_id"])
+    }
+    res.json(output);
+    client.close()
+    next()
   }
   else
   {
